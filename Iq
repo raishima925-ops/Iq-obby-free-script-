@@ -1,0 +1,251 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Lighting = game:GetService("Lighting")
+local CoreGui = game:GetService("CoreGui")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Stats = game:GetService("Stats")
+
+local LocalPlayer = Players.LocalPlayer or Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
+
+-- Load WindUI Reborn Library
+local WindUI = loadstring(game:HttpGet("https://tree-hub.net/uploads/windui/main.lua"))()
+
+-- Create Main Window
+local Window = WindUI:CreateWindow({
+    Title = "IQ Obby Script",
+    Author = "made by god demon",
+    Folder = "iq_config",
+    Icon = "rbxassetid://110868234550101",
+    Size = UDim2.fromOffset(620, 500),
+    Transparent = true,
+    Theme = "Dark"
+})
+
+-- Notification System
+local function Notify(t, c, d)
+    WindUI:Notify({Title = t, Content = c, Duration = d or 5})
+end
+
+Notify("WindUI Reborn Loaded", "Welcome, " .. LocalPlayer.DisplayName .. "!", 5)
+
+-- Helper: Purchase Items Server Remote
+local function PurchaseItem(name)
+    local remote = ReplicatedStorage:WaitForChild("Purchasing", 5)
+    if remote then
+        pcall(function() remote:InvokeServer(name, 149827570) end)
+    end
+end
+
+-- Helper: Visual Spawn Item to Backpack & Workspace
+local function SpawnVisualItem(itemName)
+    local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    local root = char:FindFirstChild("HumanoidRootPart")
+    local backpack = LocalPlayer:WaitForChild("Backpack")
+
+    local foundTool = nil
+    for _, obj in ipairs(game:GetDescendants()) do
+        if obj:IsA("Tool") and (obj.Name:lower() == itemName:lower() or obj.Name:lower():find(itemName:lower())) then
+            foundTool = obj
+            break
+        end
+    end
+
+    if foundTool then
+        local invClone = foundTool:Clone()
+        invClone.Parent = backpack
+
+        local wsClone = foundTool:Clone()
+        if root then
+            wsClone:PivotTo(root.CFrame * CFrame.new(0, 0, -5))
+        end
+        wsClone.Parent = workspace
+        Notify("Spawn Success", "Spawned '" .. foundTool.Name .. "' to Inventory & Workspace!", 4)
+    else
+        Notify("Spawn Error", "Tool model for '" .. itemName .. "' not found.", 4)
+    end
+end
+
+-- ============================================================================
+-- 1. PROFILE & SYSTEM INFO TAB
+-- ============================================================================
+local ProfileTab = Window:Tab({Title = "Profile & Info", Icon = "user"})
+local ProfileSec = ProfileTab:Section({Title = "Player Information"})
+
+local AvatarThumbnail, _ = Players:GetUserThumbnailAsync(LocalPlayer.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150)
+
+ProfileSec:Paragraph({
+    Title = "User Profile: " .. LocalPlayer.DisplayName,
+    Desc = string.format(
+        "Display Name: %s\nUsername: @%s\nUser ID: %d\nAccount Age: %d Days\nExecutor: %s",
+        LocalPlayer.DisplayName,
+        LocalPlayer.Name,
+        LocalPlayer.UserId,
+        LocalPlayer.AccountAge,
+        (identifyexecutor and identifyexecutor() or "Unknown Executor")
+    ),
+    Image = AvatarThumbnail
+})
+
+local LiveStatsCard = ProfileSec:Paragraph({
+    Title = "Live Server & Client Stats",
+    Desc = "Calculating performance..."
+})
+
+task.spawn(function()
+    while task.wait(1) do
+        pcall(function()
+            local fps = math.floor(1 / RunService.RenderStepped:Wait())
+            local ping = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue())
+            LiveStatsCard:SetDesc(string.format(
+                "FPS: %d\nPing: %d ms\nSystem Time: %s\nGame Time: %s",
+                fps,
+                ping,
+                os.date("%I:%M:%S %p"),
+                Lighting.TimeOfDay
+            ))
+        end)
+    end
+end)
+
+-- Admin Join Monitor
+Players.PlayerAdded:Connect(function(p)
+    if p.Name:lower() == "ncraftpalt" then
+        Notify("⚠️ ADMIN DETECTED", "ncraftpalt joined the server!", 10)
+    end
+end)
+
+-- ============================================================================
+-- 2. SPAWN TAB
+-- ============================================================================
+local SpawnTab = Window:Tab({Title = "Spawn Tools", Icon = "box"})
+local SpawnSec = SpawnTab:Section({Title = "Spawn Visual Custom Tools"})
+
+SpawnSec:Button({
+    Title = "Spawn top d1 (Blue / legendary+)",
+    Callback = function()
+        local backpack = LocalPlayer:WaitForChild("Backpack")
+        local tool = Instance.new("Tool")
+        tool.Name = "top d1"
+        tool.ToolTip = "legendary+"
+        tool.RequiresHandle = true
+
+        local handle = Instance.new("Part")
+        handle.Name = "Handle"
+        handle.Size = Vector3.new(1.5, 1.5, 1.5)
+        handle.Material = Enum.Material.Neon
+        handle.Color = Color3.fromRGB(0, 162, 255)
+        handle.CanCollide = false
+        handle.Parent = tool
+
+        local selection = Instance.new("SelectionBox")
+        selection.Color3 = Color3.fromRGB(0, 255, 255)
+        selection.Adornee = handle
+        selection.Parent = handle
+
+        local billboard = Instance.new("BillboardGui")
+        billboard.Size = UDim2.new(0, 100, 0, 30)
+        billboard.StudsOffset = Vector3.new(0, 2, 0)
+        billboard.AlwaysOnTop = true
+        billboard.Parent = handle
+
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.new(1, 0, 1, 0)
+        label.BackgroundTransparency = 1
+        label.Text = "top d1"
+        label.TextColor3 = Color3.fromRGB(0, 162, 255)
+        label.TextScaled = true
+        label.Font = Enum.Font.SourceSansBold
+        label.Parent = billboard
+
+        tool.Parent = backpack
+        Notify("Item Spawned", "Created 'top d1' in your backpack!", 3)
+    end
+})
+
+SpawnSec:Button({Title = "Spawn IQ 1.945g", Callback = function() SpawnVisualItem("IQ 1.945g") end})
+SpawnSec:Button({Title = "Spawn Slap", Callback = function() SpawnVisualItem("Slap") end})
+SpawnSec:Button({Title = "Spawn Big Mac", Callback = function() SpawnVisualItem("Big Mac") end})
+SpawnSec:Button({Title = "Spawn Super Ultimate Cheese", Callback = function() SpawnVisualItem("Super Ultimate Cheese") end})
+
+-- ============================================================================
+-- 3. TELEPORTS TAB
+-- ============================================================================
+local TeleportTab = Window:Tab({Title = "Teleports", Icon = "map-pin"})
+local TeleportSec = TeleportTab:Section({Title = "Planet Coordinates"})
+
+local planets = {
+    {"Battle Earth", 75, 0, 0}, {"1400", 0, 6, 0}, {"3V1", 0, 6, 0}, {"Mars", 0, 6, 0},
+    {"Mercury", 0, 6, 0}, {"Math-2024", 0, 6, 0}, {"Neptune", 0, 100, 0}, {"P-4", 0, 6, 0},
+    {"cell-2023", 0, 6, 0}, {"Uranus", 0, 30, 0}, {"Jupiter", 0, 6, 0}, {"Blood Moon", 0, 6, 0},
+    {"Death", 0, 6, 0}, {"techno-24", 0, 6, 0}, {"Wish", 0, 6, 0}, {"The Moon", 0, 6, 0}, {"Mars-2150", 0, 6, 0}
+}
+
+for _, p in ipairs(planets) do
+    TeleportSec:Button({
+        Title = "Teleport to " .. p[1],
+        Callback = function()
+            local char = LocalPlayer.Character
+            local target = workspace:FindFirstChild(p[1], true)
+            if char and target then
+                char:MoveTo(target:GetPivot().Position + Vector3.new(p[2], p[3], p[4]))
+                Notify("Teleport Success", "Teleported to " .. p[1], 3)
+            else
+                Notify("Error", "Could not locate planet: " .. p[1], 3)
+            end
+        end
+    })
+end
+
+-- ============================================================================
+-- 4. UTILITIES & CHEATS TAB
+-- ============================================================================
+local CheatsTab = Window:Tab({Title = "Cheats & Utilities", Icon = "gamepad-2"})
+local CheatsSec = CheatsTab:Section({Title = "Movement & Combat"})
+
+CheatsSec:Toggle({
+    Title = "Infinite Jump",
+    Value = false,
+    Callback = function(val)
+        _G.InfJump = val
+        UserInputService.JumpRequest:Connect(function()
+            if _G.InfJump and LocalPlayer.Character then
+                local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+                if hum then hum:ChangeState("Jumping") end
+            end
+        end)
+    end
+})
+
+CheatsSec:Toggle({
+    Title = "Click TP (Hold Ctrl + Click)",
+    Value = false,
+    Callback = function(val)
+        _G.ClickTP = val
+        local mouse = LocalPlayer:GetMouse()
+        mouse.Button1Down:Connect(function()
+            if _G.ClickTP and UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
+                if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                    LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(mouse.Hit.p + Vector3.new(0, 3, 0))
+                end
+            end
+        end)
+    end
+})
+
+local ScriptSec = CheatsTab:Section({Title = "External Scripts"})
+local ExternalScripts = {
+    {"Infinite Yield", "https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"},
+    {"Nameless Admin", "https://raw.githubusercontent.com/FilteringEnabled/NamelessAdmin/main/Source"},
+    {"Dex Explorer", "https://rawscripts.net/raw/Universal-Script-Dex-Explorer-DPP-73687"}
+}
+
+for _, s in ipairs(ExternalScripts) do
+    ScriptSec:Button({
+        Title = "Load " .. s[1],
+        Callback = function() loadstring(game:HttpGet(s[2]))() end
+    })
+end
+
+Window:SetToggleKey(Enum.KeyCode.H)
+
