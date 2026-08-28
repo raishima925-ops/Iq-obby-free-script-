@@ -1,178 +1,141 @@
-local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Lighting = game:GetService("Lighting")
-local CoreGui = game:GetService("CoreGui")
-local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local Stats = game:GetService("Stats")
+local Players, ReplicatedStorage, Lighting, CoreGui, RunService, UserInputService = game:GetService("Players"), game:GetService("ReplicatedStorage"), game:GetService("Lighting"), game:GetService("CoreGui"), game:GetService("RunService"), game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer or Players:GetPropertyChangedSignal("LocalPlayer"):Wait() or Players.LocalPlayer
 
-local LocalPlayer = Players.LocalPlayer or Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
+-- Load VexUI Library
+local VexUI = loadstring(game:HttpGet("https://github.com/SSHRKs/VexUI/releases/latest/download/main.lua"))()
 
--- Load WindUI Reborn Library
-local WindUI = loadstring(game:HttpGet("https://tree-hub.net/uploads/windui/main.lua"))()
-
--- Create Main Window
-local Window = WindUI:CreateWindow({
-    Title = "IQ Obby Script",
-    Author = "made by god demon",
-    Folder = "iq_config",
-    Icon = "rbxassetid://110868234550101",
-    Size = UDim2.fromOffset(620, 500),
+-- Create Window
+local Window = VexUI:CreateWindow({
+    Name = "iq obby script",
+    Icon = "shield",
+    Theme = "Dark",
     Transparent = true,
-    Theme = "Dark"
+    Author = "By god demon",
+    User = {
+        Enabled = true,
+        Anonymous = false,
+    }
 })
 
--- Notification System
 local function Notify(t, c, d)
-    WindUI:Notify({Title = t, Content = c, Duration = d or 5})
+    VexUI:Notification({
+        Title = t,
+        Desc = c,
+        Duration = d or 5
+    })
 end
 
-Notify("WindUI Reborn Loaded", "Welcome, " .. LocalPlayer.DisplayName .. "!", 5)
+Notify("Script Executed!", string.format("User: %s (@%s)\nUserId: %d", LocalPlayer.DisplayName, LocalPlayer.Name, LocalPlayer.UserId), 7)
 
--- Helper: Purchase Items Server Remote
 local function PurchaseItem(name)
     local remote = ReplicatedStorage:WaitForChild("Purchasing", 5)
-    if remote then
-        pcall(function() remote:InvokeServer(name, 149827570) end)
-    end
+    if remote then pcall(function() remote:InvokeServer(name, 149827570) end) end
 end
 
--- Helper: Visual Spawn Item to Backpack & Workspace
-local function SpawnVisualItem(itemName)
+-- Orbit System Setup
+local ActiveOrbitConnection = nil
+
+local function EquipAndOrbit(itemList, radius, speed)
+    if ActiveOrbitConnection then
+        ActiveOrbitConnection:Disconnect()
+        ActiveOrbitConnection = nil
+    end
+
     local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-    local root = char:FindFirstChild("HumanoidRootPart")
-    local backpack = LocalPlayer:WaitForChild("Backpack")
+    local bp = LocalPlayer:WaitForChild("Backpack")
+    local toolsToOrbit = {}
 
-    local foundTool = nil
-    for _, obj in ipairs(game:GetDescendants()) do
-        if obj:IsA("Tool") and (obj.Name:lower() == itemName:lower() or obj.Name:lower():find(itemName:lower())) then
-            foundTool = obj
-            break
+    for _, itemName in ipairs(itemList) do
+        PurchaseItem(itemName)
+        task.wait(0.25)
+        local tool = bp:FindFirstChild(itemName) or char:FindFirstChild(itemName)
+        if tool and tool:IsA("Tool") then
+            tool.Parent = char
+            table.insert(toolsToOrbit, tool)
         end
     end
 
-    if foundTool then
-        local invClone = foundTool:Clone()
-        invClone.Parent = backpack
+    local angle = 0
+    local numTools = #toolsToOrbit
 
-        local wsClone = foundTool:Clone()
-        if root then
-            wsClone:PivotTo(root.CFrame * CFrame.new(0, 0, -5))
-        end
-        wsClone.Parent = workspace
-        Notify("Spawn Success", "Spawned '" .. foundTool.Name .. "' to Inventory & Workspace!", 4)
-    else
-        Notify("Spawn Error", "Tool model for '" .. itemName .. "' not found.", 4)
+    if numTools > 0 then
+        ActiveOrbitConnection = RunService.RenderStepped:Connect(function(dt)
+            if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+            angle = angle + (dt * speed)
+
+            for i, tool in ipairs(toolsToOrbit) do
+                if tool and tool.Parent == char then
+                    local offsetAngle = angle + ((i - 1) * (math.pi * 2 / numTools))
+                    local x = math.cos(offsetAngle) * radius
+                    local z = math.sin(offsetAngle) * radius
+                    
+                    tool.Grip = CFrame.new(x, 0, z)
+                    tool.GripPos = Vector3.new(x, 0, z)
+                end
+            end
+        end)
+        Notify("Orbit System", "Orbiting " .. tostring(numTools) .. " items around player!", 5)
     end
 end
 
--- ============================================================================
--- 1. PROFILE & SYSTEM INFO TAB
--- ============================================================================
-local ProfileTab = Window:Tab({Title = "Profile & Info", Icon = "user"})
-local ProfileSec = ProfileTab:Section({Title = "Player Information"})
+local function EquipAndGrip(itemList, notifyTitle)
+    if ActiveOrbitConnection then
+        ActiveOrbitConnection:Disconnect()
+        ActiveOrbitConnection = nil
+    end
 
-local AvatarThumbnail, _ = Players:GetUserThumbnailAsync(LocalPlayer.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150)
+    local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    local bp = LocalPlayer:WaitForChild("Backpack")
+    for _, item in ipairs(itemList) do
+        PurchaseItem(item.name)
+        task.wait(0.25)
+        local tool = bp:FindFirstChild(item.name) or char:FindFirstChild(item.name)
+        if tool and tool:IsA("Tool") then
+            tool.Parent = char
+            task.wait(0.05)
+            tool.Grip = CFrame.new(item.pos.X, item.pos.Y, item.pos.Z) * CFrame.Angles(math.rad(item.rot.X), math.rad(item.rot.Y), math.rad(item.rot.Z))
+            tool.GripPos = item.pos
+        end
+    end
+    Notify(notifyTitle, "Equipped & Aligned!", 5)
+end
 
-ProfileSec:Paragraph({
-    Title = "User Profile: " .. LocalPlayer.DisplayName,
-    Desc = string.format(
-        "Display Name: %s\nUsername: @%s\nUser ID: %d\nAccount Age: %d Days\nExecutor: %s",
-        LocalPlayer.DisplayName,
-        LocalPlayer.Name,
-        LocalPlayer.UserId,
-        LocalPlayer.AccountAge,
-        (identifyexecutor and identifyexecutor() or "Unknown Executor")
-    ),
-    Image = AvatarThumbnail
-})
-
-local LiveStatsCard = ProfileSec:Paragraph({
-    Title = "Live Server & Client Stats",
-    Desc = "Calculating performance..."
-})
+-- Profile Tab
+local ProfileTab = Window:Tab({Title = "Profile & Time", Icon = "user", Border = true})
+ProfileTab:Section({Title = "Status"})
+local UserCard = ProfileTab:Paragraph({Title = "Logged in as: " .. LocalPlayer.DisplayName, Desc = "Loading..."})
+local TimeCard = ProfileTab:Paragraph({Title = "Clock Info", Desc = "Loading..."})
 
 task.spawn(function()
     while task.wait(1) do
         pcall(function()
-            local fps = math.floor(1 / RunService.RenderStepped:Wait())
-            local ping = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue())
-            LiveStatsCard:SetDesc(string.format(
-                "FPS: %d\nPing: %d ms\nSystem Time: %s\nGame Time: %s",
-                fps,
-                ping,
-                os.date("%I:%M:%S %p"),
-                Lighting.TimeOfDay
-            ))
+            UserCard:SetDesc(string.format("Username: @%s\nID: %d", LocalPlayer.Name, LocalPlayer.UserId))
+            TimeCard:SetDesc(string.format("Clock: %s\nDate: %s\nIn-Game: %s", os.date("%I:%M:%S %p"), os.date("%A, %B %d, %Y"), Lighting.TimeOfDay))
         end)
     end
 end)
 
--- Admin Join Monitor
 Players.PlayerAdded:Connect(function(p)
-    if p.Name:lower() == "ncraftpalt" then
-        Notify("⚠️ ADMIN DETECTED", "ncraftpalt joined the server!", 10)
-    end
+    if p.Name:lower() == "ncraftpalt" then Notify("⚠️ ADMIN DETECTED", "ncraftpalt joined!", 15) end
 end)
 
--- ============================================================================
--- 2. SPAWN TAB
--- ============================================================================
-local SpawnTab = Window:Tab({Title = "Spawn Tools", Icon = "box"})
-local SpawnSec = SpawnTab:Section({Title = "Spawn Visual Custom Tools"})
+-- Teleports Tab
+local TeleportTab = Window:Tab({Title = "Teleports", Icon = "map-pin", Border = true})
+TeleportTab:Section({Title = "Planet Teleports"})
 
-SpawnSec:Button({
-    Title = "Spawn top d1 (Blue / legendary+)",
-    Callback = function()
-        local backpack = LocalPlayer:WaitForChild("Backpack")
-        local tool = Instance.new("Tool")
-        tool.Name = "top d1"
-        tool.ToolTip = "legendary+"
-        tool.RequiresHandle = true
-
-        local handle = Instance.new("Part")
-        handle.Name = "Handle"
-        handle.Size = Vector3.new(1.5, 1.5, 1.5)
-        handle.Material = Enum.Material.Neon
-        handle.Color = Color3.fromRGB(0, 162, 255)
-        handle.CanCollide = false
-        handle.Parent = tool
-
-        local selection = Instance.new("SelectionBox")
-        selection.Color3 = Color3.fromRGB(0, 255, 255)
-        selection.Adornee = handle
-        selection.Parent = handle
-
-        local billboard = Instance.new("BillboardGui")
-        billboard.Size = UDim2.new(0, 100, 0, 30)
-        billboard.StudsOffset = Vector3.new(0, 2, 0)
-        billboard.AlwaysOnTop = true
-        billboard.Parent = handle
-
-        local label = Instance.new("TextLabel")
-        label.Size = UDim2.new(1, 0, 1, 0)
-        label.BackgroundTransparency = 1
-        label.Text = "top d1"
-        label.TextColor3 = Color3.fromRGB(0, 162, 255)
-        label.TextScaled = true
-        label.Font = Enum.Font.SourceSansBold
-        label.Parent = billboard
-
-        tool.Parent = backpack
-        Notify("Item Spawned", "Created 'top d1' in your backpack!", 3)
+local function teleportToPlanet(planetName, offsetX, offsetY, offsetZ)
+    local character = LocalPlayer.Character
+    local target = workspace:FindFirstChild(planetName, true)
+    local myOffsetX, myOffsetY, myOffsetZ = offsetX or 0, offsetY or 6, offsetZ or 0
+    
+    if character and target then
+        local finalPos = target:GetPivot().Position + Vector3.new(myOffsetX, myOffsetY, myOffsetZ)
+        character:MoveTo(finalPos)
+        Notify("Teleport Success", "Teleported to " .. planetName, 3)
+    else
+        Notify("Error", "Could not find " .. tostring(planetName) .. " model!", 3)
     end
-})
-
-SpawnSec:Button({Title = "Spawn IQ 1.945g", Callback = function() SpawnVisualItem("IQ 1.945g") end})
-SpawnSec:Button({Title = "Spawn Slap", Callback = function() SpawnVisualItem("Slap") end})
-SpawnSec:Button({Title = "Spawn Big Mac", Callback = function() SpawnVisualItem("Big Mac") end})
-SpawnSec:Button({Title = "Spawn Super Ultimate Cheese", Callback = function() SpawnVisualItem("Super Ultimate Cheese") end})
-
--- ============================================================================
--- 3. TELEPORTS TAB
--- ============================================================================
-local TeleportTab = Window:Tab({Title = "Teleports", Icon = "map-pin"})
-local TeleportSec = TeleportTab:Section({Title = "Planet Coordinates"})
+end
 
 local planets = {
     {"Battle Earth", 75, 0, 0}, {"1400", 0, 6, 0}, {"3V1", 0, 6, 0}, {"Mars", 0, 6, 0},
@@ -182,30 +145,179 @@ local planets = {
 }
 
 for _, p in ipairs(planets) do
-    TeleportSec:Button({
+    TeleportTab:Button({
         Title = "Teleport to " .. p[1],
-        Callback = function()
-            local char = LocalPlayer.Character
-            local target = workspace:FindFirstChild(p[1], true)
-            if char and target then
-                char:MoveTo(target:GetPivot().Position + Vector3.new(p[2], p[3], p[4]))
-                Notify("Teleport Success", "Teleported to " .. p[1], 3)
-            else
-                Notify("Error", "Could not locate planet: " .. p[1], 3)
-            end
-        end
+        Callback = function() teleportToPlanet(p[1], p[2], p[3], p[4]) end
     })
 end
 
--- ============================================================================
--- 4. UTILITIES & CHEATS TAB
--- ============================================================================
-local CheatsTab = Window:Tab({Title = "Cheats & Utilities", Icon = "gamepad-2"})
-local CheatsSec = CheatsTab:Section({Title = "Movement & Combat"})
+-- Item Categories
+local ItemCategories = {
+    {TabTitle = "Event Items", Icon = "sparkles", SectionTitle = "Event Limiteds", Items = {"IQ 32T Medal", "IQ 845M", "IQ 55 Septillion", "IQ 999,999M", "IQ 1A7", "IQ 999,999", "IQ -23 Nonillion", "IQ 2M", "IQ 602 Nonillion", "IQ 765M", "IQ 97M", "IQ 300 Trillion", "IQ 450 Quadrillion", "IQ 999 Quadrillion", "IQ -68M", "IQ 750 Decillion", "IQ 1 Undecillion", "IQ 650 Quadrillion"}},
+    {TabTitle = "galaxy mans varaints", Icon = "user", SectionTitle = "Galaxy Man Variants", Items = {"IQ", "IQ Concept", "Cosmic"}},
+    {TabTitle = "gloves varaints", Icon = "hand", SectionTitle = "Glove Variants", Items = {"Solar Glove", "Solar Glove Recoloured", "InfinityGauntlet"}},
+    {TabTitle = "Medal Trophy's", Icon = "award", SectionTitle = "Medal Trophies", Items = {"IQ -1 Billion Medal", "IQ 10 Decillion Medal", "IQ 1 Googol Medal", "IQ 1 Vigintillion Medal", "IQ 20QA Medal", "IQ 2 Vigintillion Medal", "IQ 1T Medal Mini's", "IQ 1T Medal Anniversary Skin", "Mini IQ -1 Billion Medal"}},
+    {TabTitle = "Poop Variants", Icon = "circle", SectionTitle = "Poop Variants", Items = {"IQ poopy", "IQ poopillion diarrhea", "IQ poopillion"}},
+    {TabTitle = "Concept IQ", Icon = "lightbulb", SectionTitle = "Concepts", Items = {"IQ 1 Decillion Concept", "IQ 1 Octillion Concept"}},
+    {TabTitle = "Cool Items", Icon = "smile", SectionTitle = "Cool Items", Items = {"SpaceSandwich", "ClassicTrowel", "Flying Telescope", "FreezeRay", "Smore", "Spray"}},
+    {TabTitle = "Galaxy IQs", Icon = "globe", SectionTitle = "Galaxy 1 & 2 IQ", Items = {"IQ 700 Decillion", "IQ 100 Decillion Trophy", "IQ 600 Nonillion", "IQ 1Q Piece", "IQ 1T Piece", "IQ 5B", "IQ 1B Piece", "IQ -70M", "IQ 1 Tetralogue", "IQ 650 Nonillion", "IQ 556M"}},
+    {TabTitle = "Og Items", Icon = "star", SectionTitle = "Og Iq", Items = {"IQ 1 Decillion OG", "IQ 10 Nonillion", "IQ 1 Nonillion OG", "IQ 1 Septillion OG", "IQ 1 Quintillion OG", "IQ 1 Quadrillion OG", "IQ 1T OG", "IQ 1B OG", "IQ 1 Googol"}},
+    {TabTitle = "Cool Trophies", Icon = "trophy", SectionTitle = "Cool Thing", Items = {"IQ 4,300,000", "IQ 1 Googolplex", "IQ 1 Centillion", "IQ 1.1 Quadrillion", "IQ 1 Trigentillion", "Arena Trophy", "Battle Trophy", "IQ 200 Trillion", "IQ -32 Nonillion", "IQ -43 Nonillion", "Galaxy", "IQ -300M", "IQ 305M", "Toy Spaceship", "Robux Trophy", "IQ Rainbow", "Supporter Trophy", "IQ 7M", "IQ 4M", "IQ 20K Trophy", "10M VISITS TROPHY", "IQ 1....K Trophy", "IQ 999.9M", "IQ 945M", "IQ 250M", "IQ 9M", "IQ 200M", "IQ 45M", "IQ 13M", "IQ 45M", "IQ 30M", "IQ 1 Trophy", "IQ 1 Octillion", "IQ 21M", "IQ 1K OG", "IQ 100K OG", "IQ 1M OG", "Virus Trophy", "IQ 2M Trophy", "IQ 0 Trophy", "IQ milos", "IQ 1x1", "IQ 650M Trophy", "IQ Icecream", "IQ Omega", "IQ 72M", "Tools"}},
+    {TabTitle = "Billion Tools", Icon = "coins", SectionTitle = "Billion Items", Items = {"MagicCarpet", "Moneybag", "FuseBomb", "EarthOrb", "BodySwapPotion", "Classic Plane", "MedusaHead", "Taser", "ThrowingBarrel"}},
+    {TabTitle = "Recolored Trophys", Icon = "palette", SectionTitle = "Recolored Trophy", Items = {"IQ 1.1B Trophy", "IQ 1.1 Quadrillion", "IQ 5 Quintillion", "IQ 3.5 Trigentillion", "IQ 50M Trophy", "IQ 2 Septillion", "IQ 1.2 Septillion", "IQ 101K Trophy", "IQ 15M", "IQ 150K Trophy", "IQ 1.5M Trophy", "IQ 1.3M Trophy", "IQ 16M", "IQ 1.5 Nonillion", "IQ 2 Nonillion Medal", "IQ 3 Nonillion Medal", "IQ -71M", "IQ 4 Septillion"}},
+    {TabTitle = "Rusted and Forgotten", Icon = "archive", SectionTitle = "Rusted & Forgotten Items", Items = {"IQ 100 trophy", "IQ 200 trophy", "IQ 40 trophy", "IQ 20 trophy", "IQ 0 trophy"}},
+    {TabTitle = "Useful Tools", Icon = "wrench", SectionTitle = "Vehicles", Items = {"Galaxy Warp", "IQ Brain Cell", "Spaceship", "GoldSpaceship", "IQ 702 Decillion", "IQ 601 Nonillion", "RubySpaceship", "Galaxy Spaceship", "Carbon Fiber Spaceship", "AmethystSpaceship", "EmeraldSpaceship", "IQ 232 Decillion", "IQ 4.6B", "IQ 50 Quintillion", "Spaceship Traveler", "IQ 605 Nonillion", "IQ 1900", "IQ 1969", "SapphireSpaceship", "DiamondSpaceship", "Bronze Spaceship"}},
+    {TabTitle = "Dangerous Tools", Icon = "flame", SectionTitle = "Dangerous thing", Items = {"LaserScythe", "LaserFingerPointers", "RedHyperLaser", "ultimate cheese", "Redstone Sword", "Fivetuple Cheese Burger", "BananaPeel", "Galaxy Katana", "Weapon Of IQ 999.9M", "ultimate cheesey", "WizardFlySpell", "StarbloxLatte", "Slap", "Spray"}},
+    {TabTitle = "Mini Variants", Icon = "minimize-2", SectionTitle = "Mini Tiers", Items = {"IQ Omega Mini's", "IQ 1 Googol Medal Mini's", "IQ 1 Trigentillion Mini's", "IQ 1 Septillion Mini's", "IQ 20QA Medal Mini's", "IQ 1B Trophy Mini's", "IQ 36K Trophy Mini", "IQ 50K Trophy Mini", "IQ 100K Trophy Mini", "IQ 200K Trophy Mini", "IQ 300K Trophy Mini", "IQ 400K Trophy Mini", "IQ 500K Trophy Mini"}}
+}
 
-CheatsSec:Toggle({
+for _, cat in ipairs(ItemCategories) do
+    local catTab = Window:Tab({Title = cat.TabTitle, Icon = cat.Icon, Border = true})
+    catTab:Section({Title = cat.SectionTitle})
+    for _, item in ipairs(cat.Items) do
+        catTab:Button({Title = item, Callback = function() PurchaseItem(item) end})
+    end
+end
+
+-- Custom Trophys Tab
+local CustomTab = Window:Tab({Title = "Custom Trophys", Icon = "star", Border = true})
+CustomTab:Section({Title = "Instant Custom Stacks"})
+
+CustomTab:Button({Title = "Force Equip All Trophys", Callback = function()
+    pcall(function() loadstring(game:HttpGet("https://pastebin.com/raw/2UgZ1bhw"))() end)
+    Notify("Force Equip", "Equipped trophies from Pastebin!", 5)
+end})
+
+-- Orbit Universe Preset Button
+CustomTab:Button({Title = "Orbit Universe Stack", Callback = function()
+    local universeItems = {"IQ 1 Googol Medal", "IQ 1 Googolplex", "Galaxy"}
+    EquipAndOrbit(universeItems, 25, 1.5)
+end})
+
+local Stacks = {
+    {Name = "Universe Static Stack", Items = {
+        {name = "IQ 1 Googol Medal", pos = Vector3.new(25, 0, 0), rot = Vector3.new(0, 0, 0)},
+        {name = "IQ 1 Googolplex", pos = Vector3.new(-25, 0, 0), rot = Vector3.new(0, 0, 0)},
+        {name = "Galaxy", pos = Vector3.new(3, 0, 25), rot = Vector3.new(0, 0, 0)}
+    }},
+    {Name = "IQ True OG", Items = {{name = "IQ 1 Decillion OG", pos = Vector3.new(-9, -3, -6), rot = Vector3.new(0, 0, 0)}, {name = "IQ 1 Nonillion OG", pos = Vector3.new(-5.3, 0, 0), rot = Vector3.new(9.8, 100, 0)}, {name = "IQ 1 Septillion OG", pos = Vector3.new(-9, -2.6, -12), rot = Vector3.new(-6.3, 100, 0)}, {name = "IQ 1 Quintillion OG", pos = Vector3.new(-2.3, -8.2, -6), rot = Vector3.new(-9.8, -3, -21)}, {name = "IQ 10 Nonillion", pos = Vector3.new(9.8, -26, 0), rot = Vector3.new(-6.3, 100, 0)}}},
+    {Name = "IQ Omega", Items = {{name = "IQ 1T OG", pos = Vector3.new(-4.5, 2, -9.5), rot = Vector3.new(15, 0, -9)}, {name = "IQ 1 Quintillion OG", pos = Vector3.new(3, 0, -4), rot = Vector3.new(0, 10, 0)}, {name = "IQ 1B Trophy Mini's", pos = Vector3.new(-5.3, -2.5, -4.04), rot = Vector3.new(-5, 100, 0)}}},
+    {Name = "iq 4.5 trigenllion", Items = {{name = "IQ 3.5 Trigentillion", pos = Vector3.new(-9.8, -2, -13), rot = Vector3.new(21, 100, 0)}, {name = "IQ 1 Trigentillion", pos = Vector3.new(-9.8, -2, -13), rot = Vector3.new(21, 100, 0)}}},
+    {Name = "iq -999 teraloge", Items = {{name = "IQ 1 Trigentillion", pos = Vector3.new(-9.8, -2, -13), rot = Vector3.new(21, 50, 0)}, {name = "IQ 10 Decillion Medal", pos = Vector3.new(-9.8, -2, -13), rot = Vector3.new(21, 100, 0)}, {name = "IQ 3.5 Trigentillion", pos = Vector3.new(-9.8, -2, -13), rot = Vector3.new(21, 150, 0)}, {name = "IQ -1 Billion Medal", pos = Vector3.new(-9.8, -2, -13), rot = Vector3.new(21, 200, 0)}, {name = "IQ 1 Decillion OG", pos = Vector3.new(-9.8, -2, -13), rot = Vector3.new(21, 250, 0)}, {name = "IQ 1 Septillion OG", pos = Vector3.new(-9.8, -2, -13), rot = Vector3.new(21, 300, 0)}, {name = "IQ 1T OG", pos = Vector3.new(-9.8, -2, -13), rot = Vector3.new(21, 350, 0)}, {name = "IQ 1 Googol", pos = Vector3.new(-9.8, -2, -13), rot = Vector3.new(21, 1450, 0)}}},
+    {Name = "IQ 5 grillion concept", Items = {{name = "IQ Concept", pos = Vector3.new(-5.3, -2.5, -12), rot = Vector3.new(-5, 100, -9)}, {name = "IQ 1T Piece", pos = Vector3.new(-4.5, 2, -9.5), rot = Vector3.new(15, 0, -9)}, {name = "IQ 1Q Piece", pos = Vector3.new(-5.3, -2.5, -12), rot = Vector3.new(-5, 100, -9)}, {name = "IQ Icecream", pos = Vector3.new(-5.3, -2.5, -12), rot = Vector3.new(-5, 100, -9)}, {name = "IQ 1 Octillion Concept", pos = Vector3.new(-5.3, -2.5, -12), rot = Vector3.new(-5, 100, -9)}}},
+    {Name = "Triple Nonillion Stack", Items = {
+        {name = "IQ 3 Nonillion Medal", pos = Vector3.new(-9, 2, -9.5), rot = Vector3.new(15, 0, -9)},
+        {name = "IQ 1 Nonillion OG", pos = Vector3.new(-16.7, 2, -9.5), rot = Vector3.new(15, 100, -9)},
+        {name = "IQ 2 Nonillion Medal", pos = Vector3.new(14, 0, -4), rot = Vector3.new(0, 10, -9)}
+    }},
+    {Name = "Poop Stack", Items = {
+        {name = "IQ poopy", pos = Vector3.new(-9, 0, 0), rot = Vector3.new(0, 0, 0)},
+        {name = "IQ poopillion diarrhea", pos = Vector3.new(13, 0, 0), rot = Vector3.new(0, 0, 0)},
+        {name = "IQ poopillion", pos = Vector3.new(0, 0, 10), rot = Vector3.new(0, -12, 0)}
+    }}
+}
+
+for _, st in ipairs(Stacks) do 
+    CustomTab:Button({Title = st.Name, Callback = function() EquipAndGrip(st.Items, st.Name) end}) 
+end
+
+-- Utilities Tab
+local UtilTab = Window:Tab({Title = "Utilities", Icon = "settings", Border = true})
+UtilTab:Section({Title = "Utilities & External Scripts"})
+
+UtilTab:Button({Title = "Load Drop GUI (Rainbow)", Callback = function()
+    if CoreGui:FindFirstChild("Drop GUI") then CoreGui["Drop GUI"]:Destroy() end
+    local gui = Instance.new("ScreenGui", CoreGui) gui.Name = "Drop GUI"
+    local main = Instance.new("Frame", gui) main.Size = UDim2.new(0, 150, 0, 128) main.Position = UDim2.new(0.08, 0, 0.2, 0) main.Draggable = true main.Active = true
+    
+    local btn1 = Instance.new("TextButton", main) btn1.Text = "Drop" btn1.Size = UDim2.new(0, 55, 0, 50) btn1.Position = UDim2.new(0.05, 0, 0.1, 0)
+    local btn2 = Instance.new("TextButton", main) btn2.Text = "Equip" btn2.Size = UDim2.new(0, 58, 0, 50) btn2.Position = UDim2.new(0.55, 0, 0.1, 0)
+    local btn3 = Instance.new("TextButton", main) btn3.Text = "Version 1" btn3.Size = UDim2.new(0, 151, 0, 34) btn3.Position = UDim2.new(0, 0, 1, 0)
+    local btn4 = Instance.new("TextButton", main) btn4.Text = "skidded by god demon" btn4.Size = UDim2.new(0, 151, 0, 34) btn4.Position = UDim2.new(0, 0, -0.26, 0)
+
+    btn1.MouseButton1Down:Connect(function() if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool") then LocalPlayer.Character:FindFirstChildOfClass("Tool").Parent = workspace end end)
+    btn2.MouseButton1Down:Connect(function() if LocalPlayer.Backpack:FindFirstChildOfClass("Tool") then LocalPlayer.Backpack:FindFirstChildOfClass("Tool").Parent = LocalPlayer.Character end end)
+
+    local hue = 0
+    RunService.RenderStepped:Connect(function(dt)
+        hue = (hue + dt * 0.25) % 1
+        local col = Color3.fromHSV(hue, 0.8, 1)
+        btn1.BackgroundColor3, btn2.BackgroundColor3, btn3.BackgroundColor3, btn4.BackgroundColor3 = col, col, col, col
+    end)
+end})
+
+UtilTab:Button({Title = "Client get all items", Callback = function()
+    for _, t in ipairs(ReplicatedStorage:WaitForChild("Tools"):GetChildren()) do if t:IsA("Tool") then t:Clone().Parent = LocalPlayer.Backpack end end
+end})
+
+UtilTab:Button({Title = "tp meteorblue", Callback = function()
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(20284, 31018, -84959)
+    end
+end})
+
+local Scripts = {
+    {"Load Crumbled Crown", "https://raw.githubusercontent.com/CrumbledCrown/CrumbledCrown/main/CrumbledCrown.lua"},
+    {"Subplace teleporter", "https://pastebin.com/raw/KmiuAFZh"},
+    {"Load Inf yield", "https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"},
+    {"Load nameless admin", "https://raw.githubusercontent.com/FilteringEnabled/NamelessAdmin/main/Source"},
+    {"Load Dex", "https://rawscripts.net/raw/Universal-Script-Dex-Explorer-DPP-73687"},
+    {"Free gamepass", "https://rawscripts.net/raw/Universal-Script-FREE-GAMEPASS-OR-PRODUCT-KEYLESS-BEST-SCRIPT-205620"}
+}
+for _, s in ipairs(Scripts) do UtilTab:Button({Title = s[1], Callback = function() loadstring(game:HttpGet(s[2]))() end}) end
+
+-- Cheats & Controls Tab
+local CheatsTab = Window:Tab({Title = "Cheats & Controls", Icon = "gamepad-2", Border = true})
+CheatsTab:Section({Title = "Keybinds & Combat Controls"})
+
+local removeSafeZoneEnabled = false
+CheatsTab:Toggle({
+    Title = "Remove SafeZone Barriers",
+    Callback = function(val)
+        removeSafeZoneEnabled = val
+        if removeSafeZoneEnabled then
+            task.spawn(function()
+                while removeSafeZoneEnabled do
+                    for _, obj in ipairs(workspace:GetDescendants()) do
+                        if obj:IsA("BasePart") then
+                            local name = obj.Name:lower()
+                            if name:find("safezone") or name:find("safe_zone") or name:find("safe zone") or name:find("barrier") or name:find("non-pvp") then
+                                obj:Destroy()
+                            end
+                        end
+                    end
+                    task.wait(1)
+                end
+            end)
+            Notify("SafeZone", "Removing safe zones/barriers...", 3)
+        end
+    end
+})
+
+local gauntletEnabled = false
+local gauntletCooldowns = {}
+
+CheatsTab:Toggle({
+    Title = "Enable Gauntlet Keybinds",
+    Callback = function(val) gauntletEnabled = val end
+})
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed or not gauntletEnabled then return end
+    local keyMap = {
+        [Enum.KeyCode.Q] = "Snap", [Enum.KeyCode.T] = "Teleport", [Enum.KeyCode.G] = "Grab",
+        [Enum.KeyCode.Y] = "Dance", [Enum.KeyCode.F] = "Forcefield", [Enum.KeyCode.P] = "Laser"
+    }
+    local remoteName = keyMap[input.KeyCode]
+    if remoteName and not gauntletCooldowns[remoteName] = true
+        pcall(function() ReplicatedStorage.Remotes["InfinityGauntlet"][remoteName]:FireServer() end)
+        task.wait(3)
+        gauntletCooldowns[remoteName] = false
+    end
+end)
+
+CheatsTab:Toggle({
     Title = "Infinite Jump",
-    Value = false,
     Callback = function(val)
         _G.InfJump = val
         UserInputService.JumpRequest:Connect(function()
@@ -217,9 +329,8 @@ CheatsSec:Toggle({
     end
 })
 
-CheatsSec:Toggle({
+CheatsTab:Toggle({
     Title = "Click TP (Hold Ctrl + Click)",
-    Value = false,
     Callback = function(val)
         _G.ClickTP = val
         local mouse = LocalPlayer:GetMouse()
@@ -233,19 +344,165 @@ CheatsSec:Toggle({
     end
 })
 
-local ScriptSec = CheatsTab:Section({Title = "External Scripts"})
-local ExternalScripts = {
-    {"Infinite Yield", "https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"},
-    {"Nameless Admin", "https://raw.githubusercontent.com/FilteringEnabled/NamelessAdmin/main/Source"},
-    {"Dex Explorer", "https://rawscripts.net/raw/Universal-Script-Dex-Explorer-DPP-73687"}
-}
+local autoclickerEnabled = false
+CheatsTab:Toggle({
+    Title = "Background Auto-Clicker",
+    Callback = function(val)
+        autoclickerEnabled = val
+        if autoclickerEnabled then
+            task.spawn(function()
+                while autoclickerEnabled do
+                    local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
+                    if tool then tool:Activate() end
+                    task.wait(0.05)
+                end
+            end)
+        end
+    end
+})
 
-for _, s in ipairs(ExternalScripts) do
-    ScriptSec:Button({
-        Title = "Load " .. s[1],
-        Callback = function() loadstring(game:HttpGet(s[2]))() end
-    })
+local hkillAllEnabled = false
+CheatsTab:Toggle({
+    Title = "Kill All (Must Hold Touch Damage Tool)",
+    Callback = function(val)
+        hkillAllEnabled = val
+        if hkillAllEnabled then
+            task.spawn(function()
+                while hkillAllEnabled do
+                    local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
+                    local handle = tool and (tool:FindFirstChild("Handle") or tool:FindFirstChildOfClass("BasePart"))
+                    if handle and firetouchinterest then
+                        for _, player in ipairs(Players:GetPlayers()) do
+                            if player ~= LocalPlayer and player.Character then
+                                local targetPart = player.Character:FindFirstChild("HumanoidRootPart") or player.Character:FindFirstChild("Head")
+                                if targetPart then
+                                    firetouchinterest(targetPart, handle, 0)
+                                    firetouchinterest(targetPart, handle, 1)
+                                end
+                            end
+                        end
+                    end
+                    task.wait(0.1)
+                end
+            end)
+        end
+    end
+})
+
+local hkillAllWhitelistEnabled = false
+local manualWhitelist = {}
+
+local function isWhitelisted(targetPlayer)
+    if targetPlayer == LocalPlayer then return true end
+    local isFriend = false
+    pcall(function() isFriend = LocalPlayer:IsFriendsWith(targetPlayer.UserId) end)
+    if isFriend then return true end
+    for _, name in ipairs(manualWhitelist) do
+        if string.lower(targetPlayer.Name):find(string.lower(name)) or string.lower(targetPlayer.DisplayName):find(string.lower(name)) then
+            return true
+        end
+    end
+    return false
 end
 
-Window:SetToggleKey(Enum.KeyCode.H)
+CheatsTab:Input({
+    Title = "Whitelist Player (Name or Display)",
+    Desc = "Type name to whitelist...",
+    Callback = function(text)
+        if text and text ~= "" then
+            table.insert(manualWhitelist, text)
+            Notify("Whitelist", "Added '" .. text .. "' to whitelist.", 3)
+        end
+    end
+})
 
+CheatsTab:Toggle({
+    Title = "Kill All (Skips Friends & Whitelisted)",
+    Callback = function(val)
+        hkillAllWhitelistEnabled = val
+        if hkillAllWhitelistEnabled then
+            task.spawn(function()
+                while hkillAllWhitelistEnabled do
+                    local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
+                    local handle = tool and (tool:FindFirstChild("Handle") or tool:FindFirstChildOfClass("BasePart"))
+                    if handle and firetouchinterest then
+                        for _, player in ipairs(Players:GetPlayers()) do
+                            if not isWhitelisted(player) and player.Character then
+                                local targetPart = player.Character:FindFirstChild("HumanoidRootPart") or player.Character:FindFirstChild("Head")
+                                if targetPart then
+                                    firetouchinterest(targetPart, handle, 0)
+                                    firetouchinterest(targetPart, handle, 1)
+                                end
+                            end
+                        end
+                    end
+                    task.wait(0.1)
+                end
+            end)
+        end
+    end
+})
+
+-- Steal Tab
+local StealTab = Window:Tab({Title = "Steal", Icon = "zap", Border = true})
+StealTab:Section({Title = "Steal Tools"})
+
+local function StealItem(itemName)
+    local lplayer = Players.LocalPlayer
+    local char = lplayer.Character or lplayer.CharacterAdded:Wait()
+    local targetTool = nil
+    
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= lplayer then
+            if player.Character then
+                targetTool = player.Character:FindFirstChild(itemName)
+            end
+            if not targetTool and player:FindFirstChild("Backpack") then
+                targetTool = player.Backpack:FindFirstChild(itemName)
+            end
+            if targetTool then break end
+        end
+    end
+
+    if targetTool then
+        local handle = targetTool:FindFirstChild("Handle") or targetTool:FindFirstChildWhichIsA("BasePart")
+        local arm = char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm")
+        
+        if handle and arm then
+            targetTool.Parent = char
+            local weld = Instance.new("WeldConstraint")
+            weld.Part0 = arm
+            weld.Part1 = handle
+            weld.Parent = handle
+            Notify("Steal " .. itemName, "Successfully stole " .. itemName .. " and welded to character!", 5)
+        else
+            targetTool.Parent = lplayer:WaitForChild("Backpack")
+            Notify("Steal " .. itemName, "Stole " .. itemName .. " to Backpack!", 5)
+        end
+    else
+        Notify("Steal " .. itemName, "No player currently has '" .. itemName .. "' equipped or in Backpack.", 5)
+    end
+end
+
+StealTab:Button({
+    Title = "Steal Slap",
+    Callback = function() StealItem("Slap") end
+})
+
+StealTab:Button({
+    Title = "Steal IQ 1.945g",
+    Callback = function() StealItem("IQ 1.945g") end
+})
+
+StealTab:Button({
+    Title = "Steal Big Mac",
+    Callback = function() StealItem("Big Mac") end
+})
+
+StealTab:Button({
+    Title = "Steal Super Ultimate Cheese",
+    Callback = function() StealItem("Super Ultimate Cheese") end
+})
+
+Window:SetToggleKey(Enum.KeyCode.H)
+print("[Success] VexUI Script loaded
